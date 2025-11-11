@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conway's Game of Life</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Use Inter font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Custom styles */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #111827; /* gray-900 */
+            color: #f3f4f6; /* gray-100 */
+        }
+        
+        /* Style for the canvas */
+        canvas {
+            display: block;
+            margin: 0 auto;
+            background-color: #000; /* Black background for the grid */
+            border: 1px solid #374151; /* gray-700 */
+            cursor: pointer;
+            max-width: 100%;
+        }
+
+        /* Custom styles for range sliders */
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 8px;
+            border-radius: 4px;
+            background: #374151; /* gray-700 */
+            outline: none;
+            opacity: 0.7;
+            transition: opacity .2s;
+        }
+
+        input[type="range"]:hover {
+            opacity: 1;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #4f46e5; /* indigo-600 */
+            cursor: pointer;
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #4f46e5; /* indigo-600 */
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body class="min-h-screen p-4 sm:p-8">
+    <div class="max-w-6xl mx-auto">
+        
+        <!-- Header -->
+        <h1 class="text-3xl sm:text-4xl font-bold text-center text-white mb-6">
+            Conway's Game of Life
+        </h1>
+
+        <!-- Controls -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-6 p-6 bg-gray-800 rounded-lg shadow-lg">
+            
+            <!-- Buttons -->
+            <div class="flex items-center space-x-3 col-span-1 sm:col-span-2 lg:col-span-1">
+                <button id="startButton" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg shadow transition duration-200 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed">
+                    Start
+                </button>
+                <button id="pauseButton" class="w-full bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-2 px-4 rounded-lg shadow transition duration-200 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                    Pause
+                </button>
+            </div>
+
+            <!-- Other Controls -->
+            <div class="flex items-center space-x-3 col-span-1 sm:col-span-2 lg:col-span-1">
+                <button id="clearButton" class="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg shadow transition duration-200 ease-in-out">
+                    Clear
+                </button>
+                <button id="randomButton" class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg shadow transition duration-200 ease-in-out">
+                    Randomize
+                </button>
+            </div>
+            
+            <!-- Cell Size Slider -->
+            <div class="space-y-2">
+                <label for="sizeSlider" class="block font-medium text-gray-300">
+                    Cell Size: <span id="sizeValue" class="font-bold text-white">10</span>px
+                </label>
+                <input type="range" id="sizeSlider" min="5" max="25" value="10" class="w-full">
+            </div>
+
+            <!-- Speed Slider -->
+            <div class="space-y-2">
+                <label for="speedSlider" class="block font-medium text-gray-300">
+                    Speed (Delay): <span id="speedValue" class="font-bold text-white">100</span>ms
+                </label>
+                <!-- Note: Higher value means *slower* speed -->
+                <input type="range" id="speedSlider" min="50" max="500" value="100" class="w-full">
+            </div>
+
+        </div>
+
+        <!-- Info Text -->
+        <p class="text-center text-gray-400 mb-4">
+            Click on the grid to toggle cells.
+        </p>
+
+        <!-- Game Canvas -->
+        <div class="w-full overflow-x-auto">
+            <canvas id="gameCanvas" width="800" height="600"></canvas>
+        </div>
+
+    </div>
+
+    <!-- JavaScript Logic -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // DOM Elements
+            const canvas = document.getElementById('gameCanvas');
+            const ctx = canvas.getContext('2d');
+
+            const startButton = document.getElementById('startButton');
+            const pauseButton = document.getElementById('pauseButton');
+            const clearButton = document.getElementById('clearButton');
+            const randomButton = document.getElementById('randomButton');
+            
+            const sizeSlider = document.getElementById('sizeSlider');
+            const sizeValue = document.getElementById('sizeValue');
+            const speedSlider = document.getElementById('speedSlider');
+            const speedValue = document.getElementById('speedValue');
+
+            // Colors
+            const ALIVE_COLOR = '#fde047'; // yellow-300
+            const DEAD_COLOR = '#000000'; // black
+            const GRID_COLOR = '#374151'; // gray-700
+
+            // Simulation state
+            let cellSize = parseInt(sizeSlider.value);
+            let gridWidth = Math.floor(canvas.width / cellSize);
+            let gridHeight = Math.floor(canvas.height / cellSize);
+            
+            let grid = createEmptyGrid();
+            let nextGrid = createEmptyGrid();
+            
+            let isRunning = false;
+            let lastUpdateTime = 0;
+            let updateInterval = parseInt(speedSlider.value);
+            let animationFrameId = null;
+
+            // --- Core Functions ---
+
+            /**
+             * Creates and returns a new 2D array initialized to all zeros (dead).
+             */
+            function createEmptyGrid() {
+                return new Array(gridWidth).fill(null)
+                    .map(() => new Array(gridHeight).fill(0));
+            }
+
+            /**
+             * Re-initializes the grid based on current canvas and cell size.
+             */
+            function initializeGrid() {
+                // Adjust canvas size to fit new cell size without clipping
+                canvas.width = gridWidth * cellSize;
+                canvas.height = gridHeight * cellSize;
+
+                // On small screens, the canvas might be wider than the viewport.
+                // This ensures it scales down while maintaining aspect ratio.
+                canvas.style.height = `${(canvas.height / canvas.width) * 100}%`;
+                canvas.style.width = '100%';
+
+
+                grid = createEmptyGrid();
+                nextGrid = createEmptyGrid();
+                drawGrid();
+            }
+
+            /**
+             * Resets grid calculations when parameters change.
+             */
+            function resetGridParams() {
+                gridWidth = Math.floor(canvas.width / cellSize);
+                gridHeight = Math.floor(canvas.height / cellSize);
+                initializeGrid();
+            }
+            
+            /**
+             * Draws the entire grid onto the canvas.
+             */
+            function drawGrid() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                for (let x = 0; x < gridWidth; x++) {
+                    for (let y = 0; y < gridHeight; y++) {
+                        // Draw the cell state
+                        ctx.fillStyle = grid[x][y] ? ALIVE_COLOR : DEAD_COLOR;
+                        ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+
+                        // Draw the grid lines
+                        ctx.strokeStyle = GRID_COLOR;
+                        ctx.strokeRect(x * cellSize, y * cellSize, cellSize, cellSize);
+                    }
+                }
+            }
+
+            /**
+             * Fills the grid with a random pattern.
+             */
+            function randomizeGrid() {
+                for (let x = 0; x < gridWidth; x++) {
+                    for (let y = 0; y < gridHeight; y++) {
+                        grid[x][y] = Math.random() > 0.7 ? 1 : 0; // ~30% chance of being alive
+                    }
+                }
+                drawGrid();
+            }
+
+            /**
+             * Counts the living neighbors of a given cell, with wrapping.
+             */
+            function countNeighbors(x, y) {
+                let count = 0;
+                for (let i = -1; i <= 1; i++) {
+                    for (let j = -1; j <= 1; j++) {
+                        if (i === 0 && j === 0) continue; // Skip self
+
+                        const col = (x + i + gridWidth) % gridWidth;
+                        const row = (y + j + gridHeight) % gridHeight;
+                        
+                        count += grid[col][row];
+                    }
+                }
+                return count;
+            }
+
+            /**
+             * Computes the next generation of the grid based on the rules.
+             */
+            function computeNextGeneration() {
+                for (let x = 0; x < gridWidth; x++) {
+                    for (let y = 0; y < gridHeight; y++) {
+                        const state = grid[x][y];
+                        const neighbors = countNeighbors(x, y);
+
+                        // Apply Conway's rules
+                        if (state === 0 && neighbors === 3) {
+                            // 1. A dead cell with exactly 3 live neighbors becomes alive (birth).
+                            nextGrid[x][y] = 1;
+                        } else if (state === 1 && (neighbors < 2 || neighbors > 3)) {
+                            // 2. A live cell with fewer than 2 (underpopulation) or more than 3 (overpopulation) live neighbors dies.
+                            nextGrid[x][y] = 0;
+                        } else {
+                            // 3. A live cell with 2 or 3 live neighbors lives on (stasis).
+                            // 4. A dead cell with any other number of neighbors stays dead.
+                            nextGrid[x][y] = state;
+                        }
+                    }
+                }
+
+                // Swap the grids
+                let temp = grid;
+                grid = nextGrid;
+                nextGrid = temp;
+            }
+
+            /**
+             * The main simulation loop.
+             */
+            function gameLoop(timestamp) {
+                if (!isRunning) {
+                    return;
+                }
+
+                if (timestamp - lastUpdateTime > updateInterval) {
+                    lastUpdateTime = timestamp;
+                    computeNextGeneration();
+                    drawGrid();
+                }
+
+                animationFrameId = requestAnimationFrame(gameLoop);
+            }
+
+            // --- Event Handlers ---
+
+            function handleStart() {
+                isRunning = true;
+                startButton.disabled = true;
+                pauseButton.disabled = false;
+                lastUpdateTime = performance.now(); // Reset timer
+                animationFrameId = requestAnimationFrame(gameLoop);
+            }
+
+            function handlePause() {
+                isRunning = false;
+                startButton.disabled = false;
+                pauseButton.disabled = true;
+                if (animationFrameId) {
+                    cancelAnimationFrame(animationFrameId);
+                }
+            }
+
+            function handleClear() {
+                handlePause(); // Stop the simulation
+                grid = createEmptyGrid();
+                drawGrid();
+            }
+
+            function handleRandomize() {
+                if (!isRunning) {
+                    randomizeGrid();
+                }
+            }
+
+            function handleCanvasClick(event) {
+                if (isRunning) return; // Don't allow editing while running
+
+                const rect = canvas.getBoundingClientRect();
+                
+                // Calculate scale factors in case the canvas is scaled by CSS
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
+
+                const x = (event.clientX - rect.left) * scaleX;
+                const y = (event.clientY - rect.top) * scaleY;
+
+                const col = Math.floor(x / cellSize);
+                const row = Math.floor(y / cellSize);
+
+                // Toggle the cell state
+                if (col >= 0 && col < gridWidth && row >= 0 && row < gridHeight) {
+                    grid[col][row] = grid[col][row] ? 0 : 1;
+                    drawGrid(); // Redraw immediately
+                }
+            }
+
+            function handleSizeChange(event) {
+                cellSize = parseInt(event.target.value);
+                sizeValue.textContent = cellSize;
+                handlePause(); // Stop simulation before resetting
+                resetGridParams();
+            }
+
+            function handleSpeedChange(event) {
+                updateInterval = parseInt(event.target.value);
+                speedValue.textContent = updateInterval;
+            }
+            
+            // --- Initialization ---
+
+            // Set initial slider values
+            sizeValue.textContent = sizeSlider.value;
+            speedValue.textContent = speedSlider.value;
+
+            // Add event listeners
+            startButton.addEventListener('click', handleStart);
+            pauseButton.addEventListener('click', handlePause);
+            clearButton.addEventListener('click', handleClear);
+            randomButton.addEventListener('click', handleRandomize);
+            
+            canvas.addEventListener('click', handleCanvasClick);
+            
+            sizeSlider.addEventListener('input', handleSizeChange);
+            speedSlider.addEventListener('input', handleSpeedChange);
+
+            // Initial setup
+            resetGridParams();
+        });
+    </script>
+</body>
+</html>
